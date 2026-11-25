@@ -56,7 +56,7 @@ export function createScene3D(canvas) {
   lampPass.position.set(toWorldX(1192), 3.0, toWorldZ(420));
   scene.add(lampPass);
   const horrorLight = new THREE.PointLight(0xaa0000, 0, 14, 1.4);
-  horrorLight.position.set(toWorldX(1150), 2.5, toWorldZ(350)); // on her, not the etalase
+  horrorLight.position.set(toWorldX(1020), 2.5, toWorldZ(350)); // on her, not the etalase — follows her shifted position
   scene.add(horrorLight);
 
   // ---- the room shell: checkered floor, back wall, door, dressing ----
@@ -459,7 +459,7 @@ export function createScene3D(canvas) {
   kGlow.position.set(0, 1.2, 0);
   kunti.add(kGlow);
   kunti.scale.setScalar(1.3);
-  kunti.position.set(toWorldX(1150), 0.35, toWorldZ(350)); // in front of the etalase, not behind it
+  kunti.position.set(toWorldX(1020), 0.35, toWorldZ(350)); // in front of the etalase, not behind it — shifted left so the etalase + plates hide less of her
   kunti.visible = false;
   scene.add(kunti);
 

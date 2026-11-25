@@ -272,7 +272,7 @@ function updateHUD() {
       const frac = Math.max(0, t.patience / t.max);
       const mood = t.kuntilanak ? '' : `<span class="tmood">${MOOD_LABEL[t.mood] || ''}</span>`;
       const count = t.kuntilanak ? ` (${t.servedCount}/${t.needCount})` : '';
-      return `<div class="ticket${t.kuntilanak ? ' kuntilanak' : ''}">
+      return `<div class="ticket${t.kuntilanak ? ' kuntilanak' : ''}" style="background:${t.kuntilanak ? 'rgba(70,10,10,0.82)' : 'rgba(20,10,4,0.78)'};padding:8px 10px;border-radius:10px;border:1px solid rgba(201,143,46,0.6);text-shadow:0 1px 3px rgba(0,0,0,0.9)">
         <div class="tname"><span>${t.name}${count}</span><span>${t.coins} koin</span></div>
         ${mood}
         <div class="tneeds">${t.needs.map((n) => itemName(n)).join(' + ')}</div>
@@ -303,11 +303,14 @@ function updateHUD() {
   const banner = $('horror-banner');
   if (s.kuntilanak.status === 'active') {
     banner.textContent = 'DIA DATANG...';
+    banner.style.display = 'block';
     banner.style.opacity = '1';
   } else if (s.kuntilanak.lull && s.kuntilanak.status === 'idle') {
     banner.textContent = 'DIA LAPAR... SATE PADANG ×3 — MASAK SEKARANG!';
+    banner.style.display = 'block';
     banner.style.opacity = '1';
   } else {
+    banner.style.display = 'none';
     banner.style.opacity = '0';
   }
   // Stage card.

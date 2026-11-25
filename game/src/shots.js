@@ -61,5 +61,8 @@ export function stageShot(name, world) {
   ticket('ayampop');
   ticket('sate');
   safe(() => { if (world.spawnFlyingPlate) world.spawnFlyingPlate(); });
+  // Freeze the plate mid-frame: shot mode never steps the world, so a
+  // freshly spawned plate would sit off-screen at x=-40 / W+40 forever.
+  safe(() => { if (s && s.flyingPlate) { s.flyingPlate.x = 640; s.flyingPlate.y = 240; s.flyingPlate.vx = 0; } });
   return { screen: 'play', best: 42 };
 }

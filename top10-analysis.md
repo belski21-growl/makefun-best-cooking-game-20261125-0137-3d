@@ -93,9 +93,11 @@ Full wins 552/464/435/449 coins (4 seeds); staged kuntilanak-win +96;
 fail path −20 + night halved; idle-lose 0 coins. Browser playtest: win
 seed 20261125, 368 coins, 0 console errors; horror probe PASS; flying-plate
 click live 42 → 67 (+25). Screenshots re-shot: 1-play 136.746 B, 4-serve
-106.606 B, all four <256 KiB; thumbnails checked at 384px (menu board +
-plate dot read on the cover; pale red-halo figure + "DIA DATANG..." +
-red ticket read on the horror shot).
+106.606 B, all four <256 KiB; thumbnails checked at 384px (menu board reads
+on the cover; red kuntilanak ticket reads on the horror shot). Claims about
+the flying plate and the "DIA DATANG..." banner on those shots were removed
+— Goldfish R2 showed neither was visible in the files; both are fixed in
+the R2 round and must be re-verified on the new re-shoot before claiming.
 Also fixed: the stale `kitchen.js` comment ("25 seconds"), the horror
 lighting (was nearly black in the serve shot — ambient ×0.45, fog 0.065;
 now ×0.70 / 0.038 so she reads in a still), the flying plate (gold rim +
@@ -127,7 +129,7 @@ used to hide every dish name).
   leaders. If the leaders are all polished 3D games, this entry's edge
   is its specificity (Padang + kuntilanak); if they are all 2D, its edge
   is the room.
-- **The kuntilanak race is tight by design.** 45s for 3 sates is
+- **The kuntilanak race is tight by design.** 55s for 3 sates is
   winnable only with preparation (see criterion 5). If the judge plays
   it cold and fails her, the −20 + halved night could read as unfair
   rather than tense. Mitigation in the game: the lull is 8s of visible

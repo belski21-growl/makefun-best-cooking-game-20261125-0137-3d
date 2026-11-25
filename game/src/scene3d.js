@@ -56,7 +56,7 @@ export function createScene3D(canvas) {
   lampPass.position.set(toWorldX(1192), 3.0, toWorldZ(420));
   scene.add(lampPass);
   const horrorLight = new THREE.PointLight(0xaa0000, 0, 14, 1.4);
-  horrorLight.position.set(toWorldX(1192), 2.5, toWorldZ(380));
+  horrorLight.position.set(toWorldX(1150), 2.5, toWorldZ(350)); // on her, not the etalase
   scene.add(horrorLight);
 
   // ---- the room shell: checkered floor, back wall, door, dressing ----
@@ -137,11 +137,14 @@ export function createScene3D(canvas) {
   gonjong.name = 'gonjong';
   gonjong.position.set(0, 1.8, -5.15);
   scene.add(gonjong);
+  // Menu board, right of the gonjong: it used to hang at x=-7.0, directly
+  // behind the ticket column, so the tickets hid every dish name. On the
+  // right wall, above the stoves, its title and prices stay visible.
   const menuBoard = new THREE.Mesh(
     new THREE.PlaneGeometry(3.6, 2.95),
     new THREE.MeshStandardMaterial({ map: drawMenuTexture(), roughness: 0.85 })
   );
-  menuBoard.position.set(-7.0, 1.6, -5.15);
+  menuBoard.position.set(6.0, 1.05, -5.15);
   scene.add(menuBoard);
   // Hanging lamps: visible brass shades + bulbs; the point lights above do
   // the actual lighting, these are the fixtures you see.
@@ -438,7 +441,7 @@ export function createScene3D(canvas) {
   // ---- the kuntilanak ----
   const kunti = new THREE.Group();
   const dress = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.7, 16),
-    new THREE.MeshStandardMaterial({ color: 0xf2f2f5, roughness: 0.9, transparent: true, opacity: 0.96 }));
+    new THREE.MeshStandardMaterial({ color: 0xf2f2f5, roughness: 0.9, transparent: true, opacity: 0.96, emissive: 0x661111, emissiveIntensity: 0.6 }));
   dress.position.y = 0.85; dress.castShadow = true;
   const kHead = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 12),
     new THREE.MeshStandardMaterial({ color: 0xe8d8c8, roughness: 0.6 }));
@@ -450,18 +453,31 @@ export function createScene3D(canvas) {
   kFace.scale.set(0.5, 0.5, 1);
   kFace.position.set(0, 1.85, 0.28);
   kunti.add(dress, kHead, hair, kFace);
-  kunti.position.set(toWorldX(1192), 0.35, toWorldZ(330));
+  // Red halo so she reads as a figure at thumbnail size, not a smudge.
+  const kGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xff5040, transparent: true, opacity: 0.55, depthWrite: false }));
+  kGlow.scale.set(3.2, 3.2, 1);
+  kGlow.position.set(0, 1.2, 0);
+  kunti.add(kGlow);
+  kunti.scale.setScalar(1.3);
+  kunti.position.set(toWorldX(1150), 0.35, toWorldZ(350)); // in front of the etalase, not behind it
   kunti.visible = false;
   scene.add(kunti);
 
-  // ---- the flying plate (click it for +25) ----
+  // ---- the flying plate (click it for +25): gold rim + glow so the white
+  // disc reads against the cream floor — it vanished in the cover thumbnail.
   const flyingPlate = new THREE.Group();
   const fpDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.4, 0.08, 20),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 }));
-  const fpFood = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8),
-    new THREE.MeshStandardMaterial({ color: 0x6e3b1f, roughness: 0.6 }));
+  const fpRim = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.07, 8, 24),
+    new THREE.MeshStandardMaterial({ color: 0xf2b234, emissive: 0xa86f00, emissiveIntensity: 0.9, roughness: 0.4, metalness: 0.5 }));
+  fpRim.rotation.x = Math.PI / 2;
+  const fpGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture(), color: 0xffc46b, transparent: true, opacity: 0.8, depthWrite: false }));
+  fpGlow.scale.set(2.6, 2.6, 1);
+  const fpFood = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 8),
+    new THREE.MeshStandardMaterial({ color: 0x4a2410, roughness: 0.6 }));
   fpFood.position.y = 0.15;
-  flyingPlate.add(fpDisc, fpFood);
+  flyingPlate.add(fpGlow, fpDisc, fpRim, fpFood);
+  flyingPlate.scale.setScalar(1.45); // bigger on screen — it must read at 384px thumbnail
   flyingPlate.visible = false;
   scene.add(flyingPlate);
 
@@ -599,8 +615,12 @@ export function createScene3D(canvas) {
     }
   }
 
-  function project(x, y) {
-    tmpV.set(toWorldX(x), 0.6, toWorldZ(y)).project(camera);
+  // height is the world height to project at (default 0.6, ground level). The
+  // flying plate floats at 2.6 — projecting it at 0.6 puts its click target
+  // ~90px below where it is actually drawn, so clicks on the visible plate
+  // used to miss (proven 25 Nov in the plate sim).
+  function project(x, y, height = 0.6) {
+    tmpV.set(toWorldX(x), height, toWorldZ(y)).project(camera);
     const w = canvas.clientWidth || 1280;
     const h = canvas.clientHeight || 720;
     return { x: (tmpV.x * 0.5 + 0.5) * w, y: (-tmpV.y * 0.5 + 0.5) * h };
@@ -612,14 +632,16 @@ export function createScene3D(canvas) {
     const horror = state.horror || 0;
     const flicker = state.flicker ?? 1;
 
-    // Horror mood: fog rolls in, the lamps dim and flicker, the room darkens.
-    scene.fog.density = horror * 0.065;
+    // Horror mood, kept readable: the old dimming (ambient ×0.45, fog 0.065)
+    // turned the horror screenshot nearly black and hid the kuntilanak.
+    // Brighter now (ambient ×0.70, fog 0.038) so she still reads in a still.
+    scene.fog.density = horror * 0.038;
     scene.background.lerpColors(bgNormal, bgHorror, horror);
-    ambient.intensity = 0.85 * (1 - 0.55 * horror) * flicker;
-    sun.intensity = 1.6 * (1 - 0.5 * horror) * flicker;
-    lampStove.intensity = 22 * flicker * (1 - 0.4 * horror);
-    lampPass.intensity = 16 * flicker * (1 - 0.4 * horror);
-    horrorLight.intensity = horror * 34;
+    ambient.intensity = 0.85 * (1 - 0.30 * horror) * flicker;
+    sun.intensity = 1.6 * (1 - 0.30 * horror) * flicker;
+    lampStove.intensity = 22 * flicker * (1 - 0.25 * horror);
+    lampPass.intensity = 16 * flicker * (1 - 0.25 * horror);
+    horrorLight.intensity = horror * 55;
 
     // Camera: a slow sway while she is here, plus shake on scares and fails.
     const shake = (state.shake || 0) + horror * 0.12;
@@ -781,7 +803,7 @@ export function createScene3D(canvas) {
     }
     const unlocked = !!state.condimentsUnlocked;
     for (const lock of condimentLocks) lock.visible = !unlocked;
-    lampMid.intensity = 12 * flicker * (1 - 0.4 * horror);
+    lampMid.intensity = 12 * flicker * (1 - 0.25 * horror);
 
     renderer.render(scene, camera);
   }

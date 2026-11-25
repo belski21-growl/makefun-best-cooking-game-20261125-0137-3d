@@ -7,7 +7,7 @@
 // Exit 0 only if every assert passes.
 import { createWorld, EVENT_SERVED, EVENT_KUNTILANAK, EVENT_KUNTILANAK_WIN, EVENT_KUNTILANAK_FAIL } from './game/src/kitchen.js';
 import { createRandom } from './game/src/random.js';
-import { H, INGREDIENTS, INTERACT_RADIUS, STATIONS, STEP, recipeById } from './game/src/config.js';
+import { H, INGREDIENTS, INTERACT_RADIUS, RECIPES, STATIONS, STEP, recipeById } from './game/src/config.js';
 
 const IDLE = { dx: 0, dy: 0, interact: false };
 const MAX_STEPS = 60 * 600; // 10 game-minutes, far past the 450s game
@@ -78,6 +78,21 @@ function moveToward(s, target) {
   return { dx: dx / d, dy: dy / d };
 }
 
+// Build order: an ingredient that only the target recipe needs goes on the
+// plate FIRST. A plate that exactly matches another recipe auto-completes
+// as that recipe the moment it lands — building Nasi Kapau NASI-first
+// turns [NASI, DAGING] into Rendang on the pass, jamming it with no
+// matching ticket (proven 25 Nov: kapau expired unserved, autopilot stuck
+// at the etalase). SAYUR first keeps the plate from ever matching Rendang.
+function buildOrder(recipe) {
+  const rivals = RECIPES.filter((r) => r.id !== recipe.id && r.needs.every((n) => recipe.needs.includes(n)));
+  return [...recipe.needs].sort((a, b) => {
+    const ca = rivals.filter((r) => r.needs.includes(a)).length;
+    const cb = rivals.filter((r) => r.needs.includes(b)).length;
+    return ca - cb;
+  });
+}
+
 // The autopilot: work the oldest ticket first, one recipe at a time.
 function makeAutopilot(world) {
   function atStation(s, name) {
@@ -93,7 +108,12 @@ function makeAutopilot(world) {
   }
   return function autopilotInput() {
     const s = world.state;
-    const ticket = s.tickets[0];
+    // Telegraph: no ticket yet during the lull, but the game already
+    // announced Sate Padang ×3 — pre-cook sate and stage it on the etalase.
+    let ticket = s.tickets[0];
+    if (!ticket && s.kuntilanak.lull && s.kuntilanak.status === 'idle') {
+      ticket = { recipeId: 'sate', needs: recipeById('sate').needs };
+    }
     if (!ticket) return IDLE;
     const recipe = recipeById(ticket.recipeId);
     if (s.passDish) {
@@ -114,7 +134,8 @@ function makeAutopilot(world) {
       if (atStation(s, 'bin')) return { dx: 0, dy: 0, interact: true };
       return { ...moveToward(s, stationCentre('bin')), interact: false };
     }
-    const need = recipe.needs.find((n) => !s.plate.includes(n));
+    const orderedNeeds = buildOrder(recipe);
+    const need = orderedNeeds.find((n) => !s.plate.includes(n));
     if (!need) return IDLE;
     const [needId, needState] = need.split(':');
     if (s.tray.indexOf(need) >= 0) {
@@ -191,10 +212,27 @@ function drive(world, inputFn, opts = {}) {
   const stats = {
     condUnlocked: false, condBonus: 0, condTakes: 0, servesAfterUnlock: 0,
     kuntilanakSeen: false, kuntilanakWon: false, kuntilanakFailed: false, steps: 0,
+    telegraphSeen: false, kuntiActivatedAt: null, kuntiServedCount: 0, kuntiServeTimes: [],
+    kapauServed: 0,
   };
   for (let i = 0; i < MAX_STEPS && !s.over; i += 1) {
     stats.steps = i + 1;
+    const hadKapau = s.tickets.some((t) => t.recipeId === 'kapau');
     const ev = world.step(STEP, inputFn(), false);
+    if ((ev & EVENT_SERVED) && hadKapau && !s.tickets.some((t) => t.recipeId === 'kapau')) stats.kapauServed += 1;
+    if (s.kuntilanak.lull && s.kuntilanak.status === 'idle') stats.telegraphSeen = true;
+    if (s.kuntilanak.status === 'active' && stats.kuntiActivatedAt === null) stats.kuntiActivatedAt = s.elapsed;
+    const ktNow = s.tickets.find((t) => t.kuntilanak);
+    if (ktNow && ktNow.servedCount > stats.kuntiServedCount && stats.kuntiActivatedAt !== null) {
+      stats.kuntiServeTimes.push(Math.round((s.elapsed - stats.kuntiActivatedAt) * 10) / 10);
+      stats.kuntiServedCount = ktNow.servedCount;
+    }
+    // The 3rd sate splices her ticket on the same step it is served, so
+    // the find() above never sees servedCount 3 — record it from the win.
+    if ((ev & EVENT_KUNTILANAK_WIN) && stats.kuntiActivatedAt !== null && stats.kuntiServeTimes.length < 3) {
+      stats.kuntiServeTimes.push(Math.round((s.elapsed - stats.kuntiActivatedAt) * 10) / 10);
+      stats.kuntiServedCount = 3;
+    }
     if (opts.trace && (ev & EVENT_SERVED)) {
       const kt = s.tickets.find((t) => t.kuntilanak);
       console.log(`  trace t=${s.elapsed.toFixed(1)} served#${s.served} coins=${s.coins} kunti=${kt ? `${kt.servedCount}/${kt.needCount} pat=${kt.patience.toFixed(1)}` : 'gone'} tray=${JSON.stringify(s.tray)} plate=${JSON.stringify(s.plate)} pots=${JSON.stringify(s.pots.map((p) => p.item))}`);
@@ -231,6 +269,21 @@ function runWin(seed) {
   return ok;
 }
 
+function runKuntilanakCold(seed) {
+  const world = createWorld(createRandom(seed));
+  const s = world.state;
+  const ap = makeAutopilot(world);
+  world.setStage(2, 65); // MALAM, past her 60s trigger — and NO staging at all
+  world.setCoins(40);
+  // Cold: the autopilot only knows what the game tells it — the lull
+  // telegraph (banner + float: Sate Padang ×3) during the 8s quiet. It
+  // pre-cooks during the lull, then must finish 3 sates in her 55s.
+  const { stats } = drive(world, ap, { seed });
+  const ok = stats.kuntilanakWon && s.badges.includes('Berani!');
+  console.log(`kuntilanak-cold seed=${seed}: telegraphSeen=${stats.telegraphSeen} won=${stats.kuntilanakWon} badges=${JSON.stringify(s.badges)} serveTimes=${JSON.stringify(stats.kuntiServeTimes)}s coins=${s.coins} ${ok ? 'PASS' : 'FAIL'}`);
+  return ok;
+}
+
 function runKuntilanakWin(seed) {
   const world = createWorld(createRandom(seed));
   const s = world.state;
@@ -240,8 +293,8 @@ function runKuntilanakWin(seed) {
   // Phase 1 — the lull: the board is empty for 8s before she appears, so a
   // prepared cook puts a sate on the etalase while waiting (cooked for a
   // stand-in ticket, swapped for her ticket the moment she arrives). Without
-  // this, the autopilot's serial ~17s per sate cannot fit 3 sates in her 45s
-  // (measured: sate 1 at 17.3s, sate 2 at 36.1s, ticket expires at 45s) —
+  // this, the autopilot's serial ~17s per sate cannot fit 3 sates in her 55s
+  // (measured pre-fix: sate 1 at 17.3s, sate 2 at 36.1s, ticket expired at 45s) —
   // the race is a skill gate for a cook who uses the lull, not a free win.
   world.forceTicket('sate', 1.0);
   s.nextTicketIn = 1e9; // no random tickets while staging
@@ -272,10 +325,27 @@ function runKuntilanakFail() {
   for (let i = 0; i < 60 * 120 && !(ev & EVENT_KUNTILANAK_FAIL); i += 1) {
     ev = world.step(STEP, IDLE, false);
   }
-  // Her 45s patience ran out while the chef stood still.
+  // Her 55s patience ran out while the chef stood still.
   const ok = (ev & EVENT_KUNTILANAK_FAIL) !== 0 && s.coins === 30 && s.scared > 0 && s.shake > 0
     && s.stageElapsed >= stageBefore + remainBefore / 2 - 1;
   console.log(`kuntilanak-fail: event=${(ev & EVENT_KUNTILANAK_FAIL) !== 0} coins 50->${s.coins} (expect 30) scared=${s.scared.toFixed(2)} shake=${s.shake.toFixed(2)} stageElapsed ${stageBefore}->${s.stageElapsed.toFixed(1)} (expect >=${(stageBefore + remainBefore / 2).toFixed(1)}, night halved) kuntilanak=${s.kuntilanak.status} ${ok ? 'PASS' : 'FAIL'}`);
+  return ok;
+}
+
+function runKapau(seed) {
+  const world = createWorld(createRandom(seed));
+  const s = world.state;
+  const ap = makeAutopilot(world);
+  world.setStage(1, 10); // SIANG, plenty of time left
+  world.setCoins(40);
+  // Secret menu, forced due (the 5-streak unlock itself is one line in
+  // kitchen.js; this proves the ticket, once due, actually appears and
+  // can be cooked and served for its 25 coins).
+  s.kapauDue = true;
+  s.nextTicketIn = 0.01;
+  const { stats } = drive(world, ap, { seed });
+  const ok = stats.kapauServed >= 1;
+  console.log(`kapau seed=${seed}: served=${stats.kapauServed} (Nasi Kapau 25 koin, secret menu) ${ok ? 'PASS' : 'FAIL'}`);
   return ok;
 }
 
@@ -292,6 +362,13 @@ let allOk = true;
 if (mode === 'win' || mode === 'all') {
   for (const seed of [12345, 7, 99, 20261125]) allOk &&= runWin(seed);
 }
+if (mode === 'kuntilanak-cold' || mode === 'all') {
+  let coldPasses = 0;
+  for (const seed of [20261125, 7, 99, 12345]) if (runKuntilanakCold(seed)) coldPasses += 1;
+  console.log(`kuntilanak-cold summary: ${coldPasses}/4 seeds won cold (need >=1) ${coldPasses >= 1 ? 'PASS' : 'FAIL'}`);
+  allOk &&= coldPasses >= 1;
+}
+if (mode === 'kapau' || mode === 'all') allOk &&= runKapau(20261125);
 if (mode === 'kuntilanak-win' || mode === 'all') allOk &&= runKuntilanakWin(20261125);
 if (mode === 'kuntilanak-fail' || mode === 'all') allOk &&= runKuntilanakFail();
 if (mode === 'lose' || mode === 'all') allOk &&= runLose();

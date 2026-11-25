@@ -85,7 +85,7 @@ async function runWin(browser, seed) {
   }
   await page.close();
   const ok = dk && dk.over && dk.won && dk.coins >= 100 && errors.length === 0;
-  console.log(`win seed=${seed}: over=${dk?.over} won=${dk?.won} coins=${dk?.coins} served=${dk?.served} failed=${dk?.failed} condimentUnlocked=${dk?.condimentUnlocked} bonus=${dk?.condimentBonus} takes=${dk?.condimentTakes} kuntilanakSeen=${seenKuntilanak} startleSeen=${startleSeen} errors=${errors.length} ${ok ? 'PASS' : 'FAIL'}`);
+  console.log(`win seed=${seed}: over=${dk?.over} won=${dk?.won} coins=${dk?.coins} served=${dk?.served} failed=${dk?.failed} condimentUnlocked=${dk?.condimentUnlocked} bonus=${dk?.condimentBonus} takes=${dk?.condimentTakes} kuntilanakSeen=${seenKuntilanak} kuntilanakWon=${dk?.badges?.includes('Berani!')} badges=${JSON.stringify(dk?.badges)} errors=${errors.length} ${ok ? 'PASS' : 'FAIL'}`);
   if (errors.length) console.log('  errors:', errors.slice(0, 5).join(' | '));
   return { ok, dk, errors, seenKuntilanak, startleSeen };
 }
@@ -147,6 +147,24 @@ async function runShoot(browser) {
   return { ok, out, errors };
 }
 
+async function runPlate(browser) {
+  // Bonus: a real mouse click on the staged flying plate (?shot=play),
+  // through the canvas pointer path — assert +25 and the plate gone.
+  const errors = [];
+  const page = await newPage(browser, errors);
+  await page.goto(`${BASE}/?shot=play`, { waitUntil: 'load' });
+  await page.waitForFunction(() => window.__shotReady === true, null, { timeout: 30000 });
+  const before = await page.evaluate(() => ({ coins: window.__world.state.coins, active: window.__world.state.flyingPlate.active }));
+  const pos = await page.evaluate(() => window.__scene3d.project(850, 330, 2.6));
+  await page.mouse.click(pos.x, pos.y);
+  await new Promise((r) => setTimeout(r, 300));
+  const after = await page.evaluate(() => ({ coins: window.__world.state.coins, active: window.__world.state.flyingPlate.active }));
+  await page.close();
+  const ok = before.active && after.coins === before.coins + 25 && !after.active && errors.length === 0;
+  console.log(`plate click: before coins=${before.coins} active=${before.active} screen=(${Math.round(pos.x)},${Math.round(pos.y)}) after coins=${after.coins} active=${after.active} errors=${errors.length} ${ok ? 'PASS' : 'FAIL'}`);
+  return { ok };
+}
+
 const mode = process.argv[2] || 'all';
 const browser = await chromium.launch({
   args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'],
@@ -170,6 +188,7 @@ try {
   }
   if (mode === 'lose' || mode === 'all') { const r = await runLose(browser); allOk &&= r.ok; }
   if (mode === 'probe' || mode === 'all') { const r = await runProbe(browser); allOk &&= r.ok; }
+  if (mode === 'plate') { const r = await runPlate(browser); allOk &&= r.ok; }
   if (mode === 'shoot' || mode === 'all') { const r = await runShoot(browser); allOk &&= r.ok; }
 } finally {
   await browser.close();

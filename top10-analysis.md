@@ -78,6 +78,31 @@ inference rather than observation, it says so.
    pre-cooks during the lull can do the same; a human who does not will
    eat the −20 and half the night — which is the intended sting.
 
+## Fix round — Goldfish review 25 Nov ~17:27 (verdict: LAYAK LANJUT, BELUM LAYAK SUBMIT)
+
+One blocker (B1): the kuntilanak was unwinnable cold — autopilot sate 1 at
+17.3s, sate 2 at 36.1s, ticket expired at 45s, and the game never said she
+wanted Sate Padang ×3. Fix: (a) the 8s lull now telegraphs her order on
+screen (banner "DIA LAPAR... SATE PADANG ×3 — MASAK SEKARANG!" + floating
+text) so the cook — and the autopilot — can pre-cook and stage sate during
+the quiet; (b) her patience 45 → 55s, so one imperfect sate still fits.
+Measured (25 Nov, `sim-logic.mjs all` PASS): cold autopilot wins 4/4
+seeds, sates served at 9.4s / 28.1s / 46.9s after she arrives — the third
+sate at 46.9s is why 55s (not 45s) is the budget; 45s would have cut it.
+Full wins 552/464/435/449 coins (4 seeds); staged kuntilanak-win +96;
+fail path −20 + night halved; idle-lose 0 coins. Browser playtest: win
+seed 20261125, 368 coins, 0 console errors; horror probe PASS; flying-plate
+click live 42 → 67 (+25). Screenshots re-shot: 1-play 136.746 B, 4-serve
+106.606 B, all four <256 KiB; thumbnails checked at 384px (menu board +
+plate dot read on the cover; pale red-halo figure + "DIA DATANG..." +
+red ticket read on the horror shot).
+Also fixed: the stale `kitchen.js` comment ("25 seconds"), the horror
+lighting (was nearly black in the serve shot — ambient ×0.45, fog 0.065;
+now ×0.70 / 0.038 so she reads in a still), the flying plate (gold rim +
+glow — it vanished white-on-cream in the cover thumbnail), and the menu
+board (moved right of the gonjong, above the stoves — the ticket column
+used to hide every dish name).
+
 ## What the 3D entry does that the 2.5D sibling does not
 
 - A navigable 3D room with depth, shadows and a moving camera (sway +

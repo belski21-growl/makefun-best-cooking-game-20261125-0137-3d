@@ -2,7 +2,7 @@
 // same autopilot, same ?shot/?auto/?seed — only the renderer is Three.js.
 import { BEST_KEY, H, INGREDIENTS, INTERACT_RADIUS, RECIPES, STAGES, STATIONS, STEP, itemName, recipeById } from './config.js';
 import { createRandom } from './random.js';
-import { createWorld, EVENT_CHOP, EVENT_DING, EVENT_DROP, EVENT_FAILED, EVENT_KUNTILANAK, EVENT_KUNTILANAK_FAIL, EVENT_KUNTILANAK_WIN, EVENT_LOSE, EVENT_NO_ORDER, EVENT_PICKUP, EVENT_PLATE, EVENT_RUSH, EVENT_SERVED, EVENT_STAGE, EVENT_WIN } from './kitchen.js';
+import { createWorld, EVENT_CHOP, EVENT_DING, EVENT_DROP, EVENT_FAILED, EVENT_KUNTILANAK, EVENT_KUNTILANAK_FAIL, EVENT_KUNTILANAK_WIN, EVENT_LOSE, EVENT_NONE, EVENT_NO_ORDER, EVENT_PICKUP, EVENT_PLATE, EVENT_RUSH, EVENT_SERVED, EVENT_STAGE, EVENT_WIN } from './kitchen.js';
 import { ACTION_CONFIRM, ACTION_MUTE, ACTION_PAUSE, createInput } from './input.js';
 import { createScene3D, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE } from './scene3d.js';
 import { createAudio } from './audio.js';
@@ -21,6 +21,7 @@ const status = document.getElementById('status');
 let condimentBonus = 0;
 let condimentTakes = 0;
 const world = createWorld(createRandom(seed));
+window.__world = world; // debug hook for the sim (like __scene3d below)
 const scene3d = createScene3D(canvas);
 window.__scene3d = scene3d;
 const audio = createAudio();
@@ -120,12 +121,33 @@ function moveToward(worldState, target) {
   }
   return { dx: dx / d, dy: dy / d };
 }
+// Build order: an ingredient that only the target recipe needs goes on the
+// plate FIRST. A plate that exactly matches another recipe auto-completes
+// as that recipe the moment it lands — building Nasi Kapau NASI-first
+// turns [NASI, DAGING] into Rendang on the pass, jamming it with no
+// matching ticket (proven 25 Nov in sim-logic: kapau expired unserved).
+// SAYUR first keeps the plate from ever matching Rendang.
+function buildOrder(recipe) {
+  const rivals = RECIPES.filter((r) => r.id !== recipe.id && r.needs.every((n) => recipe.needs.includes(n)));
+  return [...recipe.needs].sort((a, b) => {
+    const ca = rivals.filter((r) => r.needs.includes(a)).length;
+    const cb = rivals.filter((r) => r.needs.includes(b)).length;
+    return ca - cb;
+  });
+}
 function autopilotInput() {
   const s = world.state;
   const none = { dx: 0, dy: 0, interact: false };
-  const ticket = s.tickets[0];
+  // Telegraph: during the quiet lull before she arrives there is no ticket
+  // yet, but the banner already says Sate Padang ×3 — cook sate now and
+  // stage it on the etalase, exactly like a human who read the warning.
+  let ticket = s.tickets[0];
+  if (!ticket && s.kuntilanak.lull && s.kuntilanak.status === 'idle') {
+    ticket = { recipeId: 'sate', needs: recipeById('sate').needs };
+  }
   if (!ticket) return { dx: 0, dy: 0, interact: false };
   const recipe = recipeById(ticket.recipeId);
+  const orderedNeeds = buildOrder(recipe);
   if (s.passDish) {
     if (atStation(s, 'pass')) return { dx: 0, dy: 0, interact: true };
     return { ...moveToward(s, stationCentre('pass')), interact: false };
@@ -144,7 +166,7 @@ function autopilotInput() {
     if (atStation(s, 'bin')) return { dx: 0, dy: 0, interact: true };
     return { ...moveToward(s, stationCentre('bin')), interact: false };
   }
-  const need = recipe.needs.find((n) => !s.plate.includes(n));
+  const need = orderedNeeds.find((n) => !s.plate.includes(n));
   if (!need) return none;
   const [needId, needState] = need.split(':');
   const inTray = s.tray.indexOf(need);
@@ -161,6 +183,21 @@ function autopilotInput() {
     }
     const other = recipe.needs.find((n) => !s.plate.includes(n) && !s.tray.some((k) => k.split(':')[0] === n.split(':')[0]) && n !== need && !s.pots.some((p) => p.item && p.item.split(':')[0] === n.split(':')[0]));
     if (other && s.tray.length < 3) return fetchInput(s, other);
+    // While this pot cooks, start the next cookable in the free pot
+    // instead of idling at the stove (same as sim-logic.mjs).
+    const freePot = s.pots.findIndex((p) => !p.item);
+    if (freePot >= 0) {
+      const cookIdx = s.tray.findIndex((k) => {
+        const [id, st] = k.split(':');
+        const ing = INGREDIENTS[id];
+        if (!ing || !recipe.needs.some((n) => n.split(':')[0] === id)) return false;
+        return (st === 'raw' && ing.prep === 'cook') || (st === 'chopped' && ing.prep === 'chopcook');
+      });
+      if (cookIdx >= 0) {
+        if (atStation(s, `stove:${freePot}`)) return { dx: 0, dy: 0, interact: true };
+        return { ...moveToward(s, stationCentre(`stove:${freePot}`)), interact: false };
+      }
+    }
     return { ...moveToward(s, stationCentre(`stove:${potIdx}`)), interact: false };
   }
   const ing = INGREDIENTS[needId];
@@ -260,7 +297,19 @@ function updateHUD() {
   }).join('');
   // Horror overlay.
   $('vignette').style.opacity = String(Math.min(1, (s.horror || 0) * 0.9));
-  $('horror-banner').style.opacity = s.kuntilanak.status === 'active' ? '1' : '0';
+  // Telegraph: while the kitchen is quiet before she arrives, the banner
+  // warns what she will order (Sate Padang ×3) so the cook can pre-cook
+  // during the lull instead of learning it from the ticket.
+  const banner = $('horror-banner');
+  if (s.kuntilanak.status === 'active') {
+    banner.textContent = 'DIA DATANG...';
+    banner.style.opacity = '1';
+  } else if (s.kuntilanak.lull && s.kuntilanak.status === 'idle') {
+    banner.textContent = 'DIA LAPAR... SATE PADANG ×3 — MASAK SEKARANG!';
+    banner.style.opacity = '1';
+  } else {
+    banner.style.opacity = '0';
+  }
   // Stage card.
   const card = $('stage-card');
   if (s.transition > 0) {
@@ -274,9 +323,28 @@ function updateHUD() {
   condBar.style.display = (!s.condimentsUnlocked && s.coins >= 15) ? 'block' : 'none';
 }
 
+// Click the flying plate where it is actually drawn: its screen position
+// is the 3D projection at its floating height (2.6), not its 2D floor
+// coordinates — comparing raw click pixels to floor coords missed by ~90px.
+function tryPlateClick(x, y) {
+  const fp = world.state.flyingPlate;
+  if (!fp.active) return EVENT_NONE;
+  const pp = scene3d.project(fp.x, fp.y, 2.6);
+  if (Math.hypot(x - pp.x, y - pp.y) > 44) return EVENT_NONE;
+  return world.tryCatchPlate(fp.x, fp.y);
+}
+
 function runShot(name) {
   const scene = stageShot(name, world);
   $('overlay').style.display = 'none';
+  // Clicking works in shot scenes too: the staged flying plate can be
+  // caught with a real click (tryCatchPlate), like in the live game.
+  canvas.addEventListener('pointerdown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    tryPlateClick(x, y);
+  });
   let painted = 0;
   function paint() {
     updateHUD();
@@ -297,6 +365,8 @@ function exposeState(screen) {
     tickets: s.tickets.length, tray: [...s.tray], plate: [...s.plate], passDish: s.passDish,
     stageIndex: s.stageIndex, stageElapsed: Math.round(s.stageElapsed * 10) / 10,
     transition: Math.round(s.transition * 10) / 10, kuntilanak: s.kuntilanak.status,
+    kuntilanakTelegraph: s.kuntilanak.lull && s.kuntilanak.status === 'idle',
+    flyingPlateX: Math.round(s.flyingPlate.x), flyingPlateY: Math.round(s.flyingPlate.y),
     badges: [...s.badges], flyingPlate: s.flyingPlate.active, kapauDue: s.kapauDue,
     horror: Math.round((s.horror || 0) * 100) / 100, customers: s.customers.length,
     condimentUnlocked: !!s.condimentsUnlocked, condimentBonus, condimentTakes,
@@ -417,7 +487,7 @@ function runGame() {
     const click = input.takeClick();
     if (click) {
       audio.unlock();
-      const plateEvents = world.tryCatchPlate(click.x, click.y);
+      const plateEvents = tryPlateClick(click.x, click.y);
       if (plateEvents) {
         handleEvents(plateEvents);
         mouseStation = null;

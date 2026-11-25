@@ -45,15 +45,20 @@ export function createSecretTicket(recipeId, stage, stageElapsed, id) {
   return { id, recipeId, name: recipe.name, needs: recipe.needs, coins: recipe.coins, patience: max, max };
 }
 
-// The kuntilanak's order: 3× Sate Padang on one ticket, 45 seconds to
-// serve them all (25s would be unwinnable: one sate alone needs ~20s of
-// chopping, cooking and walking — 3 need ~45s even played well).
+// The kuntilanak's order: 3× Sate Padang on one ticket, 55 seconds to
+// serve them all. 45s was unwinnable cold (measured: sate 1 at 17.3s,
+// sate 2 at 36.1s, ticket expired at 45s — budget = need, slack 0), and
+// the game never said what she wanted. Now the 8s lull telegraphs it
+// ("Sate Padang ×3 — masak sekarang!") so a cook can pre-stage, and the
+// 55s budget leaves room for one imperfect sate. Cold autopilot post-fix
+// serves at 9.4s / 28.1s / 46.9s after she arrives (4/4 seeds) — 55s
+// leaves ~8s slack; 45s would cut the third sate (46.9 > 45).
 // Served count lives on the ticket itself.
 export function createKuntilanakTicket(id) {
   const recipe = RECIPES.find((r) => r.id === 'sate');
   return {
     id, recipeId: 'sate', name: 'Sate Padang ×3', needs: recipe.needs, coins: recipe.coins,
-    patience: 45, max: 45, kuntilanak: true, needCount: 3, servedCount: 0,
+    patience: 55, max: 55, kuntilanak: true, needCount: 3, servedCount: 0,
   };
 }
 

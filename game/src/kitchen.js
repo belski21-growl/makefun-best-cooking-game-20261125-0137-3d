@@ -424,13 +424,28 @@ export function createWorld(rng) {
 
     // Kuntilanak (MALAM only): after 60s the kitchen goes quiet — spawning
     // pauses until the board empties — and if it stays empty for 8s, she
-    // appears at the etalase and orders 3× Sate Padang in 25 seconds.
+    // appears at the etalase and orders 3× Sate Padang in 55 seconds.
+    // The lull telegraphs her order first (banner + float below), so a
+    // cook who pre-cooks during the quiet 8s can stage sates on the
+    // etalase before her ticket appears.
     const k = state.kuntilanak;
     if (state.stageIndex === STAGES.length - 1 && k.status === 'idle') {
-      if (state.stageElapsed >= 60 && !k.lull) k.lull = true;
+      if (state.stageElapsed >= 60 && !k.lull) {
+        k.lull = true;
+        addFloat(640, 120, 'Dia lapar... Sate Padang ×3 — masak sekarang!', '#ff8a7a');
+      }
       if (k.lull) {
-        if (state.tickets.length === 0) k.quiet += dt;
-        else k.quiet = 0;
+        if (state.tickets.length === 0) {
+          // Second warning, exactly when the 8s quiet countdown starts.
+          if (!k.quietAnnounced) {
+            k.quietAnnounced = true;
+            addFloat(640, 120, 'Dapur sepi — Sate Padang ×3, masak sekarang!', '#ff8a7a');
+          }
+          k.quiet += dt;
+        } else {
+          k.quiet = 0;
+          k.quietAnnounced = false;
+        }
         if (k.quiet >= 8) {
           k.status = 'active';
           state.ticketSeq += 1;

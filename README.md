@@ -27,8 +27,12 @@ crosses the room once or twice a shift (click it: +25 "Piring Hantu"). Hot
 dishes steam, cold drinks fog up with ice, and the chef walks, chops and
 jumps back with a red "!" when the kuntilanak arrives — the room dims, the
 lamps flicker, fog rolls in, the music stops, and she orders 3× Sate Padang
-in 45 seconds: serve them all for +40 coins and the "Berani!" badge, or lose
-20 coins and half the rest of the night.
+in 55 seconds: serve them all for +40 coins and the "Berani!" badge, or lose
+20 coins and half the rest of the night. The quiet lull before she arrives
+telegraphs her order on screen ("DIA LAPAR... SATE PADANG ×3 — MASAK
+SEKARANG!"), so a cook can pre-cook sate during the 8s quiet and stage it
+on the etalase. Cold autopilot wins her on 4/4 seeds (sates at 9.4s / 28.1s /
+46.9s after she arrives).
 
 Rendang — the most famous Indonesian dish abroad — is the signature: the
 highest coins in the house, slow-cooked the longest.

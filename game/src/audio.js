@@ -1,156 +1,246 @@
-// Padang Kilat 3D — WebAudio synth: no audio files, everything synthesized.
+// Padang Kilat 3D — live WebAudio synth, no audio files at all.
+// The backsound is Minang pentatonic in D minor: a saluang-style flute
+// (sine + vibrato) carries the melody, talempong plucks mark the beat,
+// and a low gong opens each stage. Sizzle is filtered noise; the
+// kuntilanak gets a dissonant sting and a cold laugh. Everything is
+// built from oscillators at runtime, so the game ships zero samples.
+
+// D-minor pentatonic (D F G A C), one octave plus the top D.
+const SCALE = [293.66, 349.23, 392.0, 440.0, 523.25, 587.33];
+// A slow, wandering saluang line over the scale (index + hold in beats).
+const MELODY = [
+  [0, 2], [2, 1], [3, 1], [4, 2], [3, 1], [2, 1],
+  [1, 2], [2, 1], [0, 1], [1, 2], [3, 2], [5, 2],
+  [4, 1], [3, 1], [2, 2], [0, 2],
+];
+const BEAT = 0.42; // seconds per beat at the kitchen's easy tempo
+
 export function createAudio() {
   let ctx = null;
+  let master = null;
+  let musicBus = null;
+  let sfxBus = null;
   let muted = false;
-  let sizzle = null;
   let musicTimer = null;
-  let musicOn = false;
+  let melodyStep = 0;
+  let sizzleNodes = null;
 
-  function ac() {
-    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-    if (ctx.state === 'suspended') ctx.resume();
-    return ctx;
-  }
-  function tone(freq, dur, type = 'sine', vol = 0.2, when = 0, slideTo = null) {
-    if (muted) return;
+  function ensure() {
+    if (ctx) return true;
     try {
-      const c = ac(); const t = c.currentTime + when;
-      const o = c.createOscillator(); const g = c.createGain();
-      o.type = type; o.frequency.setValueAtTime(freq, t);
-      if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t + dur);
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(vol, t + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g).connect(c.destination);
-      o.start(t); o.stop(t + dur + 0.05);
-    } catch { /* audio unavailable */ }
-  }
-  function noise(dur, vol = 0.15, freq = 1200, when = 0) {
-    if (muted) return;
-    try {
-      const c = ac(); const t = c.currentTime + when;
-      const len = Math.floor(c.sampleRate * dur);
-      const buf = c.createBuffer(1, len, c.sampleRate);
-      const d = buf.getChannelData(0);
-      for (let i = 0; i < len; i += 1) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-      const src = c.createBufferSource(); src.buffer = buf;
-      const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 0.8;
-      const g = c.createGain(); g.gain.value = vol;
-      src.connect(f).connect(g).connect(c.destination);
-      src.start(t);
-    } catch { /* audio unavailable */ }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return false;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = muted ? 0 : 0.9;
+      master.connect(ctx.destination);
+      musicBus = ctx.createGain();
+      musicBus.gain.value = 0.32;
+      musicBus.connect(master);
+      sfxBus = ctx.createGain();
+      sfxBus.gain.value = 0.6;
+      sfxBus.connect(master);
+    } catch (err) {
+      ctx = null;
+      return false;
+    }
+    return true;
   }
 
-  // Original Padang-flavoured loop (D minor pentatonic — saluang-like flute
-  // lead with vibrato, talempong-like plucks, a low gong every cycle).
-  // Composed here, not a recording: no copyrighted material.
-  const PENTA = { D4: 293.66, F4: 349.23, G4: 392.0, A4: 440.0, C5: 523.25, D5: 587.33, F5: 698.46, G5: 783.99, A5: 880.0, C6: 1046.5 };
-  // 32 eighth-notes; 0 = rest. A lilting saluang phrase in D minor pentatonic.
-  const LEAD = [
-    PENTA.D5, 0, PENTA.F5, PENTA.G5, PENTA.A5, 0, PENTA.G5, PENTA.F5,
-    PENTA.D5, 0, PENTA.F5, PENTA.A5, PENTA.G5, PENTA.F5, PENTA.D5, 0,
-    PENTA.F5, 0, PENTA.G5, PENTA.A5, PENTA.C6, PENTA.A5, PENTA.G5, 0,
-    PENTA.F5, PENTA.D5, PENTA.C5, PENTA.D5, 0, PENTA.F5, PENTA.D5, 0,
-  ];
-  const PLUCK = [PENTA.D5, PENTA.A4, PENTA.F4, PENTA.C5, PENTA.G4, PENTA.A4, PENTA.F4, PENTA.D4];
-  function flute(freq, dur, vol = 0.06) {
-    if (muted) return;
-    try {
-      const c = ac(); const t = c.currentTime;
-      const o = c.createOscillator(); o.type = 'sine';
-      o.frequency.setValueAtTime(freq, t);
-      const lfo = c.createOscillator(); lfo.frequency.value = 5.5;
-      const lg = c.createGain(); lg.gain.value = freq * 0.008;
-      lfo.connect(lg).connect(o.frequency);
-      const g = c.createGain();
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(vol, t + 0.05);
-      g.gain.setValueAtTime(vol, t + dur * 0.6);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g).connect(c.destination);
-      o.start(t); o.stop(t + dur + 0.05);
-      lfo.start(t); lfo.stop(t + dur + 0.05);
-    } catch { /* noop */ }
+  function tone(freq, dur, opts = {}) {
+    if (!ensure()) return;
+    const t0 = ctx.currentTime + (opts.delay || 0);
+    const osc = ctx.createOscillator();
+    osc.type = opts.type || 'sine';
+    osc.frequency.value = freq;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(opts.vol || 0.25, t0 + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain);
+    gain.connect(opts.music ? musicBus : sfxBus);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.05);
+    return { osc, gain };
   }
-  function gong() {
-    tone(73.42, 2.4, 'sine', 0.12);
-    tone(110.0, 1.8, 'sine', 0.05, 0.05);
-    tone(146.83, 1.2, 'sine', 0.04, 0.02);
+
+  // Saluang: a sine flute with a slow vibrato wobbling its pitch.
+  function saluang(freq, dur, delay = 0) {
+    if (!ensure()) return;
+    const t0 = ctx.currentTime + delay;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 5.5;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 4.5;
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc.connect(gain);
+    gain.connect(musicBus);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.05);
+    lfo.start(t0);
+    lfo.stop(t0 + dur + 0.05);
   }
-  function startMusic() {
-    if (musicOn || muted) return;
-    musicOn = true;
-    let i = 0;
-    const STEP_MS = 230;
-    const tick = () => {
-      if (!musicOn) return;
-      const n = LEAD[i % LEAD.length];
-      if (n) flute(n, 0.34, 0.055);
-      if (i % 2 === 0) tone(PLUCK[(i / 2) % PLUCK.length], 0.16, 'triangle', 0.035);
-      if (i % 32 === 0) gong();
-      if (i % 8 === 0) tone(146.83, 0.5, 'sine', 0.03); // low D drone pulse
-      i += 1;
-      musicTimer = setTimeout(tick, STEP_MS);
-    };
-    tick();
+
+  // Talempong: a short bright pluck that dies fast.
+  function talempong(freq, delay = 0, vol = 0.2) {
+    tone(freq, 0.5, { type: 'triangle', delay, vol, music: true });
+    tone(freq * 2, 0.28, { type: 'sine', delay, vol: vol * 0.4, music: true });
   }
-  function stopMusic() {
-    musicOn = false;
-    if (musicTimer) { clearTimeout(musicTimer); musicTimer = null; }
+
+  // Gong: a low sine with a very long tail, plus a faint upper partial.
+  function gong(delay = 0) {
+    tone(73.42, 3.5, { type: 'sine', delay, vol: 0.4, music: true });
+    tone(110.0, 2.2, { type: 'sine', delay, vol: 0.12, music: true });
+  }
+
+  function noiseBurst(dur, freq, vol = 0.3, delay = 0) {
+    if (!ensure()) return;
+    const t0 = ctx.currentTime + delay;
+    const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i += 1) data[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = freq;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(sfxBus);
+    src.start(t0);
+  }
+
+  function playMelodyStep() {
+    if (!ctx) return;
+    const [idx, beats] = MELODY[melodyStep % MELODY.length];
+    melodyStep += 1;
+    saluang(SCALE[idx], beats * BEAT * 0.95);
+    if (melodyStep % 2 === 0) talempong(SCALE[(idx + 2) % SCALE.length], 0, 0.1);
   }
 
   return {
-    unlock() { try { ac(); } catch { /* noop */ } },
-    click() { tone(700, 0.08, 'square', 0.08); },
-    pickup() { tone(520, 0.07, 'sine', 0.12); },
-    drop() { tone(340, 0.09, 'sine', 0.12); },
-    chop() { noise(0.09, 0.25, 900); },
-    ding() { tone(1180, 0.5, 'sine', 0.16); tone(1760, 0.4, 'sine', 0.08, 0.02); },
-    serve() { tone(660, 0.12, 'sine', 0.16); tone(880, 0.12, 'sine', 0.16, 0.1); tone(1320, 0.25, 'sine', 0.14, 0.2); },
-    fail() { tone(220, 0.3, 'sawtooth', 0.14, 0, 110); },
-    rush() { tone(440, 0.15, 'square', 0.12); tone(440, 0.15, 'square', 0.12, 0.18); tone(660, 0.3, 'square', 0.12, 0.36); },
-    stage() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, 'triangle', 0.14, i * 0.09)); },
-    plate() { tone(990, 0.1, 'sine', 0.16); tone(1480, 0.3, 'sine', 0.14, 0.08); },
-    // Kuntilanak: dissonant sting + a long eerie laugh (descending wails).
-    sting() {
-      tone(110, 1.6, 'sawtooth', 0.16, 0, 55);
-      tone(116, 1.6, 'sawtooth', 0.14, 0, 58);
-      tone(2200, 0.4, 'sine', 0.06, 0.05, 900);
-      stopMusic();
+    unlock() {
+      if (!ensure()) return;
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     },
-    laugh() {
-      // "hihihi" — three short high wails sliding down, then one long one.
-      [1250, 1150, 1050].forEach((f, i) => tone(f, 0.22, 'sine', 0.09, 0.15 + i * 0.22, f - 250));
-      tone(980, 0.9, 'sine', 0.08, 0.9, 420);
+    click() {
+      tone(660, 0.07, { type: 'square', vol: 0.12 });
+    },
+    startMusic() {
+      if (!ensure() || musicTimer) return;
+      gong();
+      playMelodyStep();
+      musicTimer = setInterval(playMelodyStep, BEAT * 1000);
+    },
+    stopMusic() {
+      if (musicTimer) {
+        clearInterval(musicTimer);
+        musicTimer = null;
+      }
     },
     startSizzle() {
-      if (sizzle || muted) return;
-      try {
-        const c = ac();
-        const len = c.sampleRate * 1.2;
-        const buf = c.createBuffer(1, len, c.sampleRate);
-        const d = buf.getChannelData(0);
-        for (let i = 0; i < len; i += 1) d[i] = Math.random() * 2 - 1;
-        const src = c.createBufferSource(); src.buffer = buf; src.loop = true;
-        const f = c.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 3800;
-        const g = c.createGain(); g.gain.value = 0.035;
-        src.connect(f).connect(g).connect(c.destination);
-        src.start();
-        sizzle = { src, g };
-      } catch { /* noop */ }
+      if (!ensure() || sizzleNodes) return;
+      const len = ctx.sampleRate;
+      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i += 1) data[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 5200;
+      filter.Q.value = 0.7;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0;
+      gain.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 0.4);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(sfxBus);
+      src.start();
+      sizzleNodes = { src, gain };
     },
     stopSizzle() {
-      if (!sizzle) return;
-      try { sizzle.src.stop(); } catch { /* noop */ }
-      sizzle = null;
+      if (!sizzleNodes || !ctx) return;
+      const { src, gain } = sizzleNodes;
+      sizzleNodes = null;
+      gain.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+      setTimeout(() => { try { src.stop(); } catch (err) { /* already stopped */ } }, 300);
     },
-    startMusic,
-    stopMusic,
+    serve() {
+      tone(523.25, 0.18, { vol: 0.22 });
+      tone(659.25, 0.18, { delay: 0.09, vol: 0.22 });
+      tone(783.99, 0.3, { delay: 0.18, vol: 0.25 });
+    },
+    fail() {
+      tone(392.0, 0.25, { type: 'triangle', vol: 0.22 });
+      tone(311.13, 0.4, { type: 'triangle', delay: 0.2, vol: 0.22 });
+    },
+    ding() {
+      tone(880, 0.5, { vol: 0.25 });
+      tone(1318.5, 0.35, { vol: 0.12 });
+    },
+    chop() {
+      noiseBurst(0.09, 900, 0.35);
+      tone(180, 0.08, { type: 'square', vol: 0.1 });
+    },
+    pickup() {
+      tone(440, 0.08, { type: 'triangle', vol: 0.18 });
+    },
+    drop() {
+      tone(330, 0.1, { type: 'triangle', vol: 0.15 });
+    },
+    rush() {
+      [0, 2, 3, 4, 5].forEach((idx, i) => talempong(SCALE[idx], i * 0.09, 0.2));
+    },
+    stage() {
+      gong();
+      saluang(SCALE[5], 0.8, 0.1);
+      saluang(SCALE[4], 0.8, 0.6);
+    },
+    sting() {
+      tone(110, 1.6, { type: 'sawtooth', vol: 0.14 });
+      tone(116.54, 1.6, { type: 'sawtooth', vol: 0.14 });
+      tone(55, 2.0, { type: 'sine', vol: 0.3 });
+    },
+    laugh() {
+      if (!ensure()) return;
+      [880, 830, 880, 740, 622].forEach((f, i) => {
+        const t0 = ctx.currentTime + i * 0.16;
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(f, t0);
+        osc.frequency.exponentialRampToValueAtTime(f * 0.94, t0 + 0.14);
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.16, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+        osc.connect(gain);
+        gain.connect(sfxBus);
+        osc.start(t0);
+        osc.stop(t0 + 0.2);
+      });
+    },
+    plate() {
+      tone(1567.98, 0.6, { vol: 0.2 });
+      tone(2093.0, 0.4, { vol: 0.1 });
+    },
     toggleMute() {
       muted = !muted;
-      if (muted) { this.stopSizzle(); stopMusic(); }
+      if (master && ctx) master.gain.value = muted ? 0 : 0.9;
       return muted;
     },
-    get muted() { return muted; },
   };
 }

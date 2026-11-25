@@ -1,63 +1,84 @@
-// Padang Kilat — keyboard + mouse input. WASD/arrows move, E or Space interacts
-// (hold E to chop), M mutes, P/Esc pauses. Clicking a station walks toward it;
-// clicking it again up close interacts.
+// Padang Kilat 3D — keyboard + mouse input, one small object.
+// The kitchen only ever asks four questions: which way is the chef
+// walking, is interact held, was anything clicked, and did the player
+// just press confirm / mute / pause. Everything else stays here.
+
+// Edge-triggered action bits, returned by takeActions().
 export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
-export const ACTION_MUTE = 4;
+export const ACTION_MUTE = 2;
+export const ACTION_PAUSE = 4;
+
+const GAME_W = 1280;
+const GAME_H = 720;
 
 export function createInput(canvas) {
-  const keys = new Set();
-  let actions = 0;
-  let clickTarget = null; // {x, y} in logical canvas pixels, or null
-  let clickStation = null; // station key the player clicked, or null
+  const held = new Set();
+  let queuedActions = 0;
+  const clicks = [];
 
-  function key(e) { return e.key.length === 1 ? e.key.toLowerCase() : e.key; }
+  function markAction(bit) {
+    queuedActions |= bit;
+  }
 
-  window.addEventListener('keydown', (e) => {
-    const k = key(e);
-    if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
-    if (!e.repeat) {
-      if (k === ' ' || k === 'enter') actions |= ACTION_CONFIRM;
-      if (k === 'p' || k === 'escape') actions |= ACTION_PAUSE;
-      if (k === 'm') actions |= ACTION_MUTE;
-    }
-    keys.add(k);
-    keys.add(e.key);
-  });
-  window.addEventListener('keyup', (e) => {
-    keys.delete(key(e));
-    keys.delete(e.key);
-  });
-  window.addEventListener('blur', () => keys.clear());
+  function onKeyDown(ev) {
+    const key = (ev.key || '').toLowerCase();
+    if (key === ' ' || key.startsWith('arrow')) ev.preventDefault();
+    if (ev.repeat) return;
+    held.add(key);
+    if (key === 'e' || key === ' ' || key === 'enter') markAction(ACTION_CONFIRM);
+    if (key === 'm') markAction(ACTION_MUTE);
+    if (key === 'p') markAction(ACTION_PAUSE);
+  }
 
-  canvas.addEventListener('pointerdown', (e) => {
+  function onKeyUp(ev) {
+    held.delete((ev.key || '').toLowerCase());
+  }
+
+  function onPointerDown(ev) {
+    if (!canvas || typeof canvas.getBoundingClientRect !== 'function') return;
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-    clickTarget = { x, y };
-    clickStation = null;
-  });
+    if (rect.width === 0 || rect.height === 0) return;
+    clicks.push({
+      x: ((ev.clientX - rect.left) / rect.width) * GAME_W,
+      y: ((ev.clientY - rect.top) / rect.height) * GAME_H,
+    });
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+  }
+  if (canvas && typeof canvas.addEventListener === 'function') {
+    canvas.addEventListener('pointerdown', onPointerDown);
+  }
+
+  function direction() {
+    let dx = 0;
+    let dy = 0;
+    if (held.has('a') || held.has('arrowleft')) dx -= 1;
+    if (held.has('d') || held.has('arrowright')) dx += 1;
+    if (held.has('w') || held.has('arrowup')) dy -= 1;
+    if (held.has('s') || held.has('arrowdown')) dy += 1;
+    if (dx !== 0 && dy !== 0) {
+      const inv = 1 / Math.hypot(dx, dy);
+      dx *= inv;
+      dy *= inv;
+    }
+    return { dx, dy };
+  }
 
   return {
-    direction() {
-      let dx = 0;
-      let dy = 0;
-      if (keys.has('a') || keys.has('ArrowLeft')) dx -= 1;
-      if (keys.has('d') || keys.has('ArrowRight')) dx += 1;
-      if (keys.has('w') || keys.has('ArrowUp')) dy -= 1;
-      if (keys.has('s') || keys.has('ArrowDown')) dy += 1;
-      if (dx !== 0 && dy !== 0) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
-      return { dx, dy };
+    direction,
+    interactHeld() {
+      return held.has('e') || held.has(' ');
     },
-    interactHeld() { return keys.has('e') || keys.has(' '); },
-    takeActions() { const a = actions; actions = 0; return a; },
     takeClick() {
-      const t = clickTarget;
-      clickTarget = null;
-      return t;
+      return clicks.length > 0 ? clicks.shift() : null;
     },
-    setClickStation(name) { clickStation = name; },
-    takeClickStation() { const s = clickStation; clickStation = null; return s; },
-    clearClick() { clickTarget = null; clickStation = null; },
+    takeActions() {
+      const bits = queuedActions;
+      queuedActions = 0;
+      return bits;
+    },
   };
 }

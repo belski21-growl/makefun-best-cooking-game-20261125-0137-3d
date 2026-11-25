@@ -70,13 +70,7 @@ inference rather than observation, it says so.
    browser playtest asserts 0 console errors and 0 page errors on a full
    win, a lose, and the horror probe. The headless logic sim runs the
    same rules in Node with no DOM. Known sharp edge, documented in the
-   sim: the kuntilanak's 3 sates in 45s are a skill gate, not a free win
-   — the built-in autopilot's serial ~17s per sate cannot fit all three
-   (measured: sate 1 at 17.3s, sate 2 at 36.1s, expiry at 45s); a cook
-   who uses the 8s quiet lull to stage a sate on the etalase wins it
-   (proven in sim-logic.mjs: +95 coins, "Berani!" badge). A human who
-   pre-cooks during the lull can do the same; a human who does not will
-   eat the −20 and half the night — which is the intended sting.
+   sim: the kuntilanak's 3 sates in 55s are a skill gate, not a free win — the patience was raised 45 → 55s and the 8s quiet lull now telegraphs her order on screen (banner "DIA LAPAR... SATE PADANG ×3 — MASAK SEKARANG!" + floating text), so a cook who pre-cooks during the lull can stage sate and win it cold (proven in sim-logic.mjs: cold autopilot wins 4/4 seeds, sates at 9.4s / 28.1s / 46.9s, +95 coins, "Berani!" badge; the third sate at 46.9s is why 55s is the budget). A human who does not prepare will eat the −20 and half the night — which is the intended sting.
 
 ## Fix round — Goldfish review 25 Nov ~17:27 (verdict: LAYAK LANJUT, BELUM LAYAK SUBMIT)
 
@@ -98,6 +92,10 @@ on the cover; red kuntilanak ticket reads on the horror shot). Claims about
 the flying plate and the "DIA DATANG..." banner on those shots were removed
 — Goldfish R2 showed neither was visible in the files; both are fixed in
 the R2 round and must be re-verified on the new re-shoot before claiming.
+Re-verified 25 Nov ~18:32 by Goldfish confirmation (goldfish-confirm-r2.md):
+banner "DIA DATANG..." visible in 4-serve, KOIN pill readable in all four
+shots, flying plate visible in the cover, kuntilanak fully visible —
+verdict LAYAK SUBMIT, 22/25.
 Also fixed: the stale `kitchen.js` comment ("25 seconds"), the horror
 lighting (was nearly black in the serve shot — ambient ×0.45, fog 0.065;
 now ×0.70 / 0.038 so she reads in a still), the flying plate (gold rim +
